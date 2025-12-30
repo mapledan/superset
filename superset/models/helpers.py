@@ -87,7 +87,7 @@ from superset.exceptions import (
 )
 from superset.extensions import feature_flag_manager
 from superset.jinja_context import BaseTemplateProcessor
-from superset.sql.parse import sanitize_clause, SQLScript, SQLStatement
+from superset.sql.parse import get_statement_class, sanitize_clause, SQLScript, SQLStatement
 from superset.superset_typing import (
     AdhocMetric,
     Column as ColumnTyping,
@@ -201,7 +201,8 @@ def validate_adhoc_subquery(
     :raise SupersetSecurityException if sql contains sub-queries or
     nested sub-queries with table
     """
-    parsed_statement = SQLStatement(sql, engine)
+    statement_class = get_statement_class(engine)
+    parsed_statement = statement_class(sql, engine)
     if parsed_statement.has_subquery():
         if not is_feature_enabled("ALLOW_ADHOC_SUBQUERY"):
             raise SupersetSecurityException(

@@ -65,6 +65,7 @@ from superset.errors import ErrorLevel, SupersetError, SupersetErrorType
 from superset.exceptions import OAuth2Error, OAuth2RedirectError
 from superset.sql.parse import (
     BaseSQLStatement,
+    get_statement_class,
     LimitMethod,
     RLSMethod,
     SQLScript,
@@ -1147,7 +1148,8 @@ class BaseEngineSpec:  # pylint: disable=too-many-public-methods
 
         """
         if not cls.allows_cte_in_subquery:
-            statement = SQLStatement(sql, engine=cls.engine)
+            statement_class = get_statement_class(cls.engine)
+            statement = statement_class(sql, engine=cls.engine)
             if statement.has_cte():
                 return statement.as_cte(cls.cte_alias).format()
 
