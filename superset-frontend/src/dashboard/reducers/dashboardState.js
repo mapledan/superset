@@ -57,6 +57,24 @@ import {
 } from '../actions/dashboardState';
 import { HYDRATE_DASHBOARD } from '../actions/hydrate';
 
+const setDifference = (setA, setB) => {
+  const out = new Set();
+  setA.forEach(value => {
+    if (!setB.has(value)) {
+      out.add(value);
+    }
+  });
+  return out;
+};
+
+const setUnion = (setA, setB) => {
+  const out = new Set(setA);
+  setB.forEach(value => {
+    out.add(value);
+  });
+  return out;
+};
+
 export default function dashboardStateReducer(state = {}, action) {
   const actionHandlers = {
     [HYDRATE_DASHBOARD]() {
@@ -221,12 +239,17 @@ export default function dashboardStateReducer(state = {}, action) {
       };
     },
     [SET_ACTIVE_TAB]() {
-      const newActiveTabs = new Set(state.activeTabs).difference(
+      const newActiveTabs = setDifference(
+        new Set(state.activeTabs),
         new Set(action.inactiveTabs.concat(action.prevTabId)),
       );
-      const newInactiveTabs = new Set(state.inactiveTabs)
-        .difference(new Set(action.activeTabs))
-        .union(new Set(action.inactiveTabs));
+      const newInactiveTabs = setUnion(
+        setDifference(
+          new Set(state.inactiveTabs),
+          new Set(action.activeTabs),
+        ),
+        new Set(action.inactiveTabs),
+      );
 
       // Track when each tab was last activated
       const tabActivationTimes = { ...state.tabActivationTimes };
@@ -237,7 +260,9 @@ export default function dashboardStateReducer(state = {}, action) {
       return {
         ...state,
         inactiveTabs: Array.from(newInactiveTabs),
-        activeTabs: Array.from(newActiveTabs.union(new Set(action.activeTabs))),
+        activeTabs: Array.from(
+          setUnion(newActiveTabs, new Set(action.activeTabs)),
+        ),
         tabActivationTimes,
       };
     },
