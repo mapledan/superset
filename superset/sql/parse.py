@@ -45,7 +45,7 @@ from sqlglot.optimizer.scope import (
 )
 
 from superset.exceptions import QueryClauseValidationException, SupersetParseError
-from superset.sql.dialects import DB2, Elasticsearch, Dremio, Firebolt, Pinot
+from superset.sql.dialects import DB2, Dremio, Firebolt, Pinot
 
 if TYPE_CHECKING:
     from superset.models.core import Database
@@ -74,7 +74,7 @@ SQLGLOT_DIALECTS = {
     "druid": Dialects.DRUID,
     "duckdb": Dialects.DUCKDB,
     # "dynamodb": ???
-    "elasticsearch": Elasticsearch,
+    # "elasticsearch": ???
     # "exa": ???
     # "firebird": ???
     "firebolt": Firebolt,
