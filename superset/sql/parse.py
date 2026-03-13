@@ -22,7 +22,7 @@ import enum
 import logging
 import re
 import urllib.parse
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, Generic, Optional, TYPE_CHECKING, TypeVar
 
@@ -807,7 +807,19 @@ class SQLStatement(BaseSQLStatement[exp.Expression]):
         """
         Modify the `LIMIT` or `TOP` value of the SQL statement inplace.
         """
-        if method == LimitMethod.FORCE_LIMIT:
+        # Workaround在這：oracle 11g還不能用FETCH FIRST 100 ROWS ONLY，https://github.com/apache/superset/pull/33473
+        if self.engine == "oracle":
+            self._parsed = exp.Select(
+                expressions=[exp.Star()],
+                where=exp.Where(
+                    this=exp.LTE(
+                        this=exp.Identifier(this="ROWNUM"),
+                        expression=exp.Literal(this=str(limit), is_string=False),
+                    )
+                ),
+                **{"from": exp.From(this=exp.Subquery(this=self._parsed.copy()))},
+            )
+        elif method == LimitMethod.FORCE_LIMIT:
             self._parsed.args["limit"] = exp.Limit(
                 expression=exp.Literal(this=str(limit), is_string=False)
             )
@@ -1267,6 +1279,397 @@ class KustoKQLStatement(BaseSQLStatement[str]):
         return predicate
 
 
+def split_elasticsearch_sql(sql: str) -> list[str]:
+    """
+    Split a SQL script into statements for engines that don't use sqlglot.
+
+    This is a best-effort splitter that ignores semicolons inside strings and comments.
+    """
+    statements: list[str] = []
+    current: list[str] = []
+    in_single = False
+    in_double = False
+    in_backtick = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    length = len(sql)
+
+    while i < length:
+        char = sql[i]
+        next_char = sql[i + 1] if i + 1 < length else ""
+
+        if in_line_comment:
+            current.append(char)
+            if char == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+
+        if in_block_comment:
+            current.append(char)
+            if char == "*" and next_char == "/":
+                current.append(next_char)
+                i += 2
+                in_block_comment = False
+                continue
+            i += 1
+            continue
+
+        if in_single:
+            current.append(char)
+            if char == "\\" and next_char:
+                current.append(next_char)
+                i += 2
+                continue
+            if char == "'":
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            current.append(char)
+            if char == "\\" and next_char:
+                current.append(next_char)
+                i += 2
+                continue
+            if char == '"':
+                in_double = False
+            i += 1
+            continue
+
+        if in_backtick:
+            current.append(char)
+            if char == "`":
+                in_backtick = False
+            i += 1
+            continue
+
+        if char == "-" and next_char == "-":
+            in_line_comment = True
+            current.append(char)
+            current.append(next_char)
+            i += 2
+            continue
+
+        if char == "/" and next_char == "*":
+            in_block_comment = True
+            current.append(char)
+            current.append(next_char)
+            i += 2
+            continue
+
+        if char == "'":
+            in_single = True
+            current.append(char)
+            i += 1
+            continue
+
+        if char == '"':
+            in_double = True
+            current.append(char)
+            i += 1
+            continue
+
+        if char == "`":
+            in_backtick = True
+            current.append(char)
+            i += 1
+            continue
+
+        if char == ";":
+            statement = "".join(current).strip()
+            if statement:
+                statements.append(statement)
+            current = []
+            i += 1
+            continue
+
+        current.append(char)
+        i += 1
+
+    if current:
+        statement = "".join(current).strip()
+        if statement:
+            statements.append(statement)
+
+    return statements
+
+
+def _iter_elasticsearch_tokens(sql: str) -> Iterator[tuple[str, int, int]]:
+    """
+    Yield (token_type, start, end) for non-comment, non-string tokens.
+    """
+    in_single = False
+    in_double = False
+    in_backtick = False
+    in_line_comment = False
+    in_block_comment = False
+    i = 0
+    length = len(sql)
+
+    while i < length:
+        char = sql[i]
+        next_char = sql[i + 1] if i + 1 < length else ""
+
+        if in_line_comment:
+            if char == "\n":
+                in_line_comment = False
+            i += 1
+            continue
+
+        if in_block_comment:
+            if char == "*" and next_char == "/":
+                in_block_comment = False
+                i += 2
+                continue
+            i += 1
+            continue
+
+        if in_single:
+            if char == "\\" and next_char:
+                i += 2
+                continue
+            if char == "'":
+                in_single = False
+            i += 1
+            continue
+
+        if in_double:
+            if char == "\\" and next_char:
+                i += 2
+                continue
+            if char == '"':
+                in_double = False
+            i += 1
+            continue
+
+        if in_backtick:
+            if char == "`":
+                in_backtick = False
+            i += 1
+            continue
+
+        if char == "-" and next_char == "-":
+            in_line_comment = True
+            i += 2
+            continue
+
+        if char == "/" and next_char == "*":
+            in_block_comment = True
+            i += 2
+            continue
+
+        if char == "'":
+            in_single = True
+            i += 1
+            continue
+
+        if char == '"':
+            in_double = True
+            i += 1
+            continue
+
+        if char == "`":
+            in_backtick = True
+            i += 1
+            continue
+
+        if char in {"(", ")"}:
+            yield ("symbol", i, i + 1)
+            i += 1
+            continue
+
+        if char.isalpha() or char == "_":
+            start = i
+            i += 1
+            while i < length and (sql[i].isalnum() or sql[i] == "_"):
+                i += 1
+            yield ("word", start, i)
+            continue
+
+        if char.isdigit():
+            start = i
+            i += 1
+            while i < length and sql[i].isdigit():
+                i += 1
+            yield ("number", start, i)
+            continue
+
+        i += 1
+
+
+class ElasticsearchStatement(BaseSQLStatement[str]):
+    """
+    Minimal SQL statement handler for ElasticSearch without sqlglot.
+    """
+
+    def __init__(
+        self,
+        statement: str | None = None,
+        engine: str = "elasticsearch",
+        ast: str | None = None,
+    ):
+        super().__init__(statement, engine, ast)
+
+    @classmethod
+    def split_script(
+        cls,
+        script: str,
+        engine: str,
+    ) -> list[ElasticsearchStatement]:
+        return [
+            cls(statement, engine, statement.strip())
+            for statement in split_elasticsearch_sql(script)
+        ]
+
+    @classmethod
+    def _parse_statement(
+        cls,
+        statement: str,
+        engine: str,
+    ) -> str:
+        if engine != "elasticsearch":
+            raise SupersetParseError(
+                statement,
+                engine,
+                message=f"Invalid engine: {engine}",
+            )
+
+        statements = split_elasticsearch_sql(statement)
+        if len(statements) != 1:
+            raise SupersetParseError(
+                statement,
+                engine,
+                message="ElasticsearchStatement should have exactly one statement",
+            )
+
+        return statements[0].strip()
+
+    @classmethod
+    def _extract_tables_from_statement(
+        cls,
+        parsed: str,
+        engine: str,
+    ) -> set[Table]:
+        logger.warning(
+            "Elasticsearch SQL doesn't support table extraction. This means that data "
+            "access roles will not be enforced by Superset in the database."
+        )
+        return set()
+
+    def format(self, comments: bool = True) -> str:
+        return self._parsed.strip()
+
+    def get_settings(self) -> dict[str, str | bool]:
+        return {}
+
+    def is_select(self) -> bool:
+        return True
+
+    def is_mutating(self) -> bool:
+        return False
+
+    def optimize(self) -> ElasticsearchStatement:
+        return ElasticsearchStatement(ast=self._parsed, engine=self.engine)
+
+    def check_functions_present(self, functions: set[str]) -> bool:
+        logger.warning(
+            "Elasticsearch SQL doesn't support checking for functions present."
+        )
+        return False
+
+    def _find_limit_token(self) -> tuple[int, int, int] | None:
+        depth = 0
+        pending_limit = False
+        last_limit: tuple[int, int, int] | None = None
+
+        for token_type, start, end in _iter_elasticsearch_tokens(self._parsed):
+            token = self._parsed[start:end]
+            if token_type == "symbol":
+                if token == "(":
+                    depth += 1
+                elif token == ")":
+                    depth = max(depth - 1, 0)
+                continue
+
+            if token_type == "word":
+                if depth == 0 and token.lower() == "limit":
+                    pending_limit = True
+                    continue
+
+                if pending_limit and token.strip():
+                    pending_limit = False
+
+            elif token_type == "number":
+                if pending_limit and depth == 0:
+                    last_limit = (start, end, int(token))
+                pending_limit = False
+
+        return last_limit
+
+    def get_limit_value(self) -> int | None:
+        if limit_token := self._find_limit_token():
+            return limit_token[2]
+        return None
+
+    def set_limit_value(
+        self,
+        limit: int,
+        method: LimitMethod = LimitMethod.FORCE_LIMIT,
+    ) -> None:
+        if method != LimitMethod.FORCE_LIMIT:
+            raise SupersetParseError(
+                self._parsed,
+                self.engine,
+                message="Elasticsearch SQL only supports the FORCE_LIMIT method.",
+            )
+
+        limit_token = self._find_limit_token()
+        if limit_token:
+            start, end, _ = limit_token
+            self._parsed = f"{self._parsed[:start]}{limit}{self._parsed[end:]}"
+            return
+
+        match = re.search(r";\s*$", self._parsed)
+        if match:
+            prefix = self._parsed[: match.start()].rstrip()
+            suffix = self._parsed[match.start() :]
+            self._parsed = f"{prefix} LIMIT {limit}{suffix}"
+            return
+
+        prefix = self._parsed.rstrip()
+        suffix = self._parsed[len(prefix) :]
+        self._parsed = f"{prefix} LIMIT {limit}{suffix}"
+
+    def has_cte(self) -> bool:
+        return False
+
+    def as_cte(self, alias: str = "__cte") -> ElasticsearchStatement:
+        raise SupersetParseError(
+            self._parsed,
+            self.engine,
+            message="Elasticsearch SQL doesn't support CTE rewrites.",
+        )
+
+    def as_create_table(
+        self,
+        table: Table,
+        method: CTASMethod,
+    ) -> ElasticsearchStatement:
+        raise SupersetParseError(
+            self._parsed,
+            self.engine,
+            message="Elasticsearch SQL doesn't support CTAS/CVAS rewrites.",
+        )
+
+    def has_subquery(self) -> bool:
+        return False
+
+    def parse_predicate(self, predicate: str) -> str:
+        return predicate
+
+
 class SQLScript:
     """
     A SQL script, with 0+ statements.
@@ -1276,6 +1679,7 @@ class SQLScript:
     # adds a lot of complexity to Superset, so we should avoid adding new engines to
     # this data structure.
     special_engines = {
+        "elasticsearch": ElasticsearchStatement,
         "kustokql": KustoKQLStatement,
     }
 
@@ -1371,6 +1775,13 @@ class SQLScript:
         `SELECT` statement.
         """
         return len(self.statements) == 1 and self.statements[0].is_select()
+
+
+def get_statement_class(engine: str) -> type[BaseSQLStatement[Any]]:
+    """
+    Return the statement class for an engine, preferring special engines.
+    """
+    return SQLScript.special_engines.get(engine, SQLStatement)
 
 
 def extract_tables_from_statement(
@@ -1549,7 +1960,10 @@ def sanitize_clause(clause: str, engine: str) -> str:
     Make sure the SQL clause is valid.
     """
     try:
-        statement = SQLStatement(clause, engine)
+        statement_class = get_statement_class(engine)
+        if statement_class is not SQLStatement:
+            return clause.strip()
+        statement = statement_class(clause, engine)
         dialect = SQLGLOT_DIALECTS.get(engine)
         from sqlglot.dialects.dialect import Dialect
 
