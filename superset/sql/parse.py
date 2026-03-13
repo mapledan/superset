@@ -817,7 +817,7 @@ class SQLStatement(BaseSQLStatement[exp.Expression]):
                         expression=exp.Literal(this=str(limit), is_string=False),
                     )
                 ),
-                **{"from": exp.From(this=exp.Subquery(this=self._parsed.copy()))},
+                from_=exp.From(this=exp.Subquery(this=self._parsed.copy())),
             )
         elif method == LimitMethod.FORCE_LIMIT:
             self._parsed.args["limit"] = exp.Limit(
