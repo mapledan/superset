@@ -16,14 +16,28 @@
  * specific language governing permissions and limitations
  * under the License.
  */
+import normalizeTimestamp from './normalizeTimestamp';
 
 export default function stringifyTimeInput(
-  value: Date | number | undefined | null,
+  value: Date | number | string | undefined | null,
   fn: (time: Date) => string,
 ) {
   if (value === null || value === undefined) {
     return `${value}`;
   }
 
-  return fn(value instanceof Date ? value : new Date(value));
+  if (value instanceof Date) {
+    return fn(value);
+  }
+
+  if (typeof value === 'string') {
+    // Numeric-only strings are stringified JS number timestamps (ms since epoch)
+    if (/^\d+$/.test(value)) {
+      return fn(new Date(Number(value)));
+    }
+    // Normalize non-ISO date strings for cross-browser compatibility
+    return fn(new Date(normalizeTimestamp(value)));
+  }
+
+  return fn(new Date(value));
 }
