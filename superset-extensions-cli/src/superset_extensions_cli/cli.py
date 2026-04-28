@@ -426,9 +426,9 @@ def bundle(ctx: click.Context, output: Path | None) -> None:
         sys.exit(1)
 
     manifest = json.loads(manifest_path.read_text())
-    id_ = manifest["id"]
+    name = manifest["name"]
     version = manifest["version"]
-    default_filename = f"{id_}-{version}.supx"
+    default_filename = f"{name}-{version}.supx"
 
     if output is None:
         zip_path = Path(default_filename)
@@ -663,7 +663,7 @@ def init(
         else click.confirm("Include backend?", default=True)
     )
 
-    target_dir = Path.cwd() / names["id"]
+    target_dir = Path.cwd() / names["name"]
     if target_dir.exists():
         click.secho(f"❌ Directory {target_dir} already exists.", fg="red")
         sys.exit(1)
@@ -686,7 +686,7 @@ def init(
     click.secho("✅ Created extension.json", fg="green")
 
     # Create .gitignore
-    gitignore = env.get_template(".gitignore.j2").render(ctx)
+    gitignore = env.get_template("gitignore.j2").render(ctx)
     (target_dir / ".gitignore").write_text(gitignore)
     click.secho("✅ Created .gitignore", fg="green")
 
