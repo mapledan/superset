@@ -26,7 +26,12 @@ from typing import Any, Callable, cast, NamedTuple, Optional, TYPE_CHECKING
 from flask import current_app, Flask, g, Request
 from flask_appbuilder import Model
 from flask_appbuilder.models.filters import BaseFilter
-from flask_appbuilder.security.sqla.apis import RoleApi, UserApi
+from flask_appbuilder.models.sqla.filters import FilterContains
+from flask_appbuilder.security.sqla.apis import (
+    PermissionViewMenuApi,
+    RoleApi,
+    UserApi,
+)
 from flask_appbuilder.security.sqla.manager import SecurityManager
 from flask_appbuilder.security.sqla.models import (
     assoc_group_role,
@@ -185,6 +190,23 @@ class SupersetUserApi(UserApi):
         item.roles = []
 
 
+class SupersetPermissionViewMenuApi(PermissionViewMenuApi):
+    """
+    Overriding PermissionViewMenuApi to support filtering by id, permission.name,
+    and view_menu.name. FAB's Filters.__init__ does `_search_filters[k] += v` when
+    processing search_filters, which requires the key to already exist. Dot-notation
+    related columns are not auto-detected, so we inject their filter instances
+    directly after _init_properties runs.
+    """
+
+    search_columns = ["id", "permission.name", "view_menu.name"]
+
+    def _init_properties(self) -> None:
+        super()._init_properties()
+        for col in ["permission.name", "view_menu.name"]:
+            self._filters._search_filters[col] = [FilterContains(col, self.datamodel)]
+
+
 # Limiting routes on FAB model views
 PermissionViewModelView.include_route_methods = {RouteMethod.LIST}
 PermissionModelView.include_route_methods = {RouteMethod.LIST}
@@ -267,6 +289,7 @@ class SupersetSecurityManager(  # pylint: disable=too-many-public-methods
 
     role_api = SupersetRoleApi
     user_api = SupersetUserApi
+    permission_view_menu_api = SupersetPermissionViewMenuApi
 
     USER_MODEL_VIEWS = {
         "RegisterUserModelView",

@@ -94,6 +94,8 @@ export default (memo as <T>(fn: T) => T)(function GlobalFilter<
       setGlobalFilter(newValue || undefined);
     },
     200,
+    // Don't overwrite the user's in-progress input while the field is focused.
+    () => !isSearchFocused.get(id),
   );
 
   // Preserve focus during server-side filtering to maintain a better user experience

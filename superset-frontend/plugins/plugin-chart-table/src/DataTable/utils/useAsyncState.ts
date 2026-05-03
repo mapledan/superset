@@ -23,12 +23,16 @@ import { useAsyncDebounce } from 'react-table';
 import 'regenerator-runtime/runtime';
 
 /**
- * Hook useState to allow always return latest initialValue
+ * Hook useState to allow always return latest initialValue.
+ * Pass an optional `shouldSync` guard: when it returns false (e.g. the input
+ * has focus), external initialValue changes are ignored so that in-progress
+ * user input is never overwritten.
  */
 export default function useAsyncState<T, F extends (newValue: T) => unknown>(
   initialValue: T,
   callback: F,
   wait = 200,
+  shouldSync?: () => boolean,
 ) {
   const [value, setValue] = useState(initialValue);
   const valueRef = useRef(initialValue);
@@ -37,7 +41,7 @@ export default function useAsyncState<T, F extends (newValue: T) => unknown>(
   // sync updated initialValue
   if (valueRef.current !== initialValue) {
     valueRef.current = initialValue;
-    if (value !== initialValue) {
+    if (value !== initialValue && (shouldSync === undefined || shouldSync())) {
       setValue(initialValue);
     }
   }
