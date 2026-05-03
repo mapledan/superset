@@ -1,0 +1,13 @@
+diff --git a/superset-frontend/src/components/TagsList/index.tsx b/superset-frontend/src/components/TagsList/index.tsx
+index 654b828bfb..1bee519050 100644
+--- a/superset-frontend/src/components/TagsList/index.tsx
++++ b/superset-frontend/src/components/TagsList/index.tsx
+@@ -49,7 +49,7 @@ export const TagsList = ({
+ }: TagsListProps) => {
+   const sortedTags = useMemo(
+     () =>
+-      tags.toSorted((a, b) => {
++      tags.slice().sort((a, b) => {
+         const nameA = a.name ?? '';
+         const nameB = b.name ?? '';
+         return nameA.localeCompare(nameB);

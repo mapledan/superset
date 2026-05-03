@@ -1,0 +1,57 @@
+diff --git a/superset-frontend/plugins/plugin-chart-table/src/DataTable/DataTable.tsx b/superset-frontend/plugins/plugin-chart-table/src/DataTable/DataTable.tsx
+index 4cec527e8c..9d8a75f503 100644
+--- a/superset-frontend/plugins/plugin-chart-table/src/DataTable/DataTable.tsx
++++ b/superset-frontend/plugins/plugin-chart-table/src/DataTable/DataTable.tsx
+@@ -255,7 +255,7 @@ export default typedMemo(function DataTable<D extends object>({
+       getTableSize: defaultGetTableSize,
+       globalFilter: defaultGlobalFilter,
+       sortTypes,
+-      autoResetGlobalFilter: !isEqual(columnNames, previousColumnNames),
++      autoResetGlobalFilter: false,
+       autoResetSortBy: !isEqual(columnNames, previousColumnNames),
+       manualSortBy: !!serverPagination,
+       ...moreUseTableOptions,
+diff --git a/superset-frontend/plugins/plugin-chart-table/src/DataTable/components/GlobalFilter.tsx b/superset-frontend/plugins/plugin-chart-table/src/DataTable/components/GlobalFilter.tsx
+index baf9fad9b2..22be27167c 100644
+--- a/superset-frontend/plugins/plugin-chart-table/src/DataTable/components/GlobalFilter.tsx
++++ b/superset-frontend/plugins/plugin-chart-table/src/DataTable/components/GlobalFilter.tsx
+@@ -94,6 +94,8 @@ export default (memo as <T>(fn: T) => T)(function GlobalFilter<
+       setGlobalFilter(newValue || undefined);
+     },
+     200,
++    // Don't overwrite the user's in-progress input while the field is focused.
++    () => !isSearchFocused.get(id),
+   );
+ 
+   // Preserve focus during server-side filtering to maintain a better user experience
+diff --git a/superset-frontend/plugins/plugin-chart-table/src/DataTable/utils/useAsyncState.ts b/superset-frontend/plugins/plugin-chart-table/src/DataTable/utils/useAsyncState.ts
+index 0d941462e5..cb28e890f1 100644
+--- a/superset-frontend/plugins/plugin-chart-table/src/DataTable/utils/useAsyncState.ts
++++ b/superset-frontend/plugins/plugin-chart-table/src/DataTable/utils/useAsyncState.ts
+@@ -23,12 +23,16 @@ import { useAsyncDebounce } from 'react-table';
+ import 'regenerator-runtime/runtime';
+ 
+ /**
+- * Hook useState to allow always return latest initialValue
++ * Hook useState to allow always return latest initialValue.
++ * Pass an optional `shouldSync` guard: when it returns false (e.g. the input
++ * has focus), external initialValue changes are ignored so that in-progress
++ * user input is never overwritten.
+  */
+ export default function useAsyncState<T, F extends (newValue: T) => unknown>(
+   initialValue: T,
+   callback: F,
+   wait = 200,
++  shouldSync?: () => boolean,
+ ) {
+   const [value, setValue] = useState(initialValue);
+   const valueRef = useRef(initialValue);
+@@ -37,7 +41,7 @@ export default function useAsyncState<T, F extends (newValue: T) => unknown>(
+   // sync updated initialValue
+   if (valueRef.current !== initialValue) {
+     valueRef.current = initialValue;
+-    if (value !== initialValue) {
++    if (value !== initialValue && (shouldSync === undefined || shouldSync())) {
+       setValue(initialValue);
+     }
+   }

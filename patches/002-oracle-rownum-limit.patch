@@ -1,0 +1,25 @@
+diff --git a/superset/sql/parse.py b/superset/sql/parse.py
+index 20fe7f2b0c..08f3264b0c 100644
+--- a/superset/sql/parse.py
++++ b/superset/sql/parse.py
+@@ -808,7 +808,19 @@ class SQLStatement(BaseSQLStatement[exp.Expression]):
+         """
+         Modify the `LIMIT` or `TOP` value of the SQL statement inplace.
+         """
+-        if method == LimitMethod.FORCE_LIMIT:
++        # Workaround在這：oracle 11g還不能用FETCH FIRST 100 ROWS ONLY，https://github.com/apache/superset/pull/33473
++        if self.engine == "oracle":
++            self._parsed = exp.Select(
++                expressions=[exp.Star()],
++                where=exp.Where(
++                    this=exp.LTE(
++                        this=exp.Identifier(this="ROWNUM"),
++                        expression=exp.Literal(this=str(limit), is_string=False),
++                    )
++                ),
++                from_=exp.From(this=exp.Subquery(this=self._parsed.copy())),
++            )
++        elif method == LimitMethod.FORCE_LIMIT:
+             self._parsed.args["limit"] = exp.Limit(
+                 expression=exp.Literal(this=str(limit), is_string=False)
+             )
