@@ -41,8 +41,8 @@ git diff <new-tag>..HEAD -- <files> > patches/NNN-xxx.patch
 | [002](#002-oracle-rownum-limit) | `002-oracle-rownum-limit.patch` | ✅ 已穩定 | Oracle 11g ROWNUM workaround（25 行） |
 | [003](#003-pivot-table-date-nan) | `003-pivot-table-date-nan.patch` | ✅ 已穩定 | Pivot Table 日期欄顯示 NaN 修正 |
 | [004](#004-es2015-compat) | `004-es2015-compat.patch` | ✅ 已穩定 | ES2015 不相容 API 替換 |
-| [005](#005-table-chart-search-box) | `005-table-chart-search-box.wip.patch` | 🔬 實驗中 | Table Chart 搜尋框被清空修正 |
-| [006](#006-security-permission-api) | `006-security-permission-api.wip.patch` | 🔬 實驗中 | PermissionViewMenu API 篩選支援 |
+| [005](#005-table-chart-search-box) | `005-table-chart-search-box.patch` | ✅ 已穩定 | Table Chart 搜尋框被清空修正 |
+| [006](#006-security-permission-api) | `006-security-permission-api.patch` | ✅ 已穩定 | PermissionViewMenu API 篩選支援 |
 
 ---
 
@@ -188,8 +188,8 @@ Pivot Table 的日期欄位顯示 `NaN`。
 
 ## 005 Table Chart Search Box
 
-**Patch 檔**：`patches/005-table-chart-search-box.wip.patch`  
-**狀態**：🔬 實驗中（未 commit）
+**Patch 檔**：`patches/005-table-chart-search-box.patch`  
+**狀態**：✅ 已穩定
 
 ### 問題
 
@@ -240,8 +240,8 @@ Table Chart 的 Search 輸入框打字後，搜尋會套用，但 input 的值�
 
 ## 006 Security Permission API
 
-**Patch 檔**：`patches/006-security-permission-api.wip.patch`  
-**狀態**：🔬 實驗中（未 commit）
+**Patch 檔**：`patches/006-security-permission-api.patch`  
+**狀態**：✅ 已穩定
 
 ### 問題
 
@@ -270,9 +270,8 @@ FAB（Flask-AppBuilder）內建的 `PermissionViewMenuApi` 不支援以 `permiss
 ## 待辦事項
 
 - [x] 刪除孤兒檔 `superset-frontend/src/dashboard/reducers/dashboardState.js`（已被 `.ts` 取代）
-- [ ] 驗證 005 Table Chart Search Box 在 server-side pagination 和 client-side 兩種模式下均正常
-- [ ] 驗證 006 Security Permission API 的篩選功能
-- [ ] 005、006 確認穩定後移除 `.wip.` 後綴並重新產生 patch
+- [x] 驗證 005 Table Chart Search Box 並列入正式 patch
+- [x] 驗證 006 Security Permission API 並列入正式 patch
 
 ---
 
