@@ -1,0 +1,16 @@
+oracledb
+mysqlclient
+psycopg2
+elasticsearch-dbapi
+sqlalchemy-bigquery
+google-cloud-bigquery-storage
+sqlalchemy-solr
+trino
+pyhive[presto]
+thrift
+gevent
+redis
+authlib
+clickhouse-connect
+fastmcp
+playwright

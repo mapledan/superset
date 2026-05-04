@@ -202,6 +202,7 @@ RUN mkdir -p /app/data && chown -R superset:superset /app/data
 
 # Copy compiled things from previous stages
 COPY --from=superset-node /app/superset/static/assets superset/static/assets
+COPY --from=superset-node /app/superset/static/service-worker.js superset/static/service-worker.js
 
 # TODO, when the next version comes out, use --exclude superset/translations
 COPY superset superset
@@ -283,3 +284,50 @@ USER root
 RUN uv pip install .[duckdb]
 USER superset
 CMD ["/app/docker/entrypoints/docker-ci.sh"]
+
+######################################################################
+# Ruten image — lean + Oracle Instant Client + Playwright + extra DB drivers
+######################################################################
+FROM lean AS ruten
+USER root
+
+RUN apt-get update -qq && apt-get install -yqq --no-install-recommends \
+      libaio-dev \
+      unzip \
+      pkg-config \
+      build-essential \
+      default-libmysqlclient-dev \
+      ttf-wqy-zenhei \
+      ttf-wqy-microhei \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Debian trixie (t64) libaio compatibility symlink
+RUN set -eux; \
+    for p in /usr/lib/x86_64-linux-gnu /lib/x86_64-linux-gnu; do \
+      if [ -e "$p/libaio.so.1t64" ]; then \
+        ln -sf "$p/libaio.so.1t64" "$p/libaio.so.1" && ldconfig && break; \
+      fi; \
+    done; \
+    true
+
+# Oracle Instant Client 19.29 (injected via --build-context oracle-zip)
+COPY --from=oracle-zip instantclient-basic-linux.x64-19.29.0.0.0dbru.zip /tmp/
+RUN mkdir -p /opt/oracle \
+    && unzip /tmp/instantclient-basic-linux.x64-19.29.0.0.0dbru.zip -d /opt/oracle \
+    && rm -f /tmp/instantclient-basic-linux.x64-19.29.0.0.0dbru.zip \
+    && echo "/opt/oracle/instantclient_19_29" > /etc/ld.so.conf.d/oracle-instantclient.conf \
+    && ldconfig
+
+# Ruten extra Python packages (Oracle, MySQL, BigQuery, Trino, Playwright…)
+COPY ruten/requirements.txt /tmp/ruten-requirements.txt
+RUN --mount=type=cache,target=${SUPERSET_HOME}/.cache/uv \
+    /app/docker/pip-install.sh --requires-build-essential \
+      -r /tmp/ruten-requirements.txt \
+    && rm -f /tmp/ruten-requirements.txt
+
+# Playwright: install Chromium + system deps (self-contained, no manual ChromeDriver needed)
+RUN playwright install chromium --with-deps
+
+WORKDIR /app
+USER superset
