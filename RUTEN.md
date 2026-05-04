@@ -23,46 +23,12 @@ git stash pop
 #    上游已修 → 刪除 patch 檔
 #    有衝突   → 手動 reapply
 
-# 6. 確認 ruten Dockerfile target 仍可 build
-#    - lean stage 的 PLAYWRIGHT_BROWSERS_PATH 是否有變動
-#    - 新版本若調整了 lean 的基礎套件，確認 ruten/requirements.txt 無衝突
-
-# 7. 重新產生 patch 檔
+# 6. 重新產生 patch 檔
 git diff <new-tag>..HEAD -- <files> > patches/NNN-xxx.patch
 
-# 8. Commit
-git add patches/ ruten/ RUTEN.md && git commit
+# 7. Commit
+git add patches/ RUTEN.md && git commit
 ```
-
----
-
-## 部署架構
-
-### Dockerfile `ruten` target
-
-`Dockerfile` 末尾新增 `ruten` stage，基於 `lean`，供 `superset_config` repo 的 `rebuild.sh` 直接使用，取代原本的兩層 build。
-
-```bash
-# 在 superset_config repo 執行
-DOCKER_BUILDKIT=1 docker build \
-  --target ruten \
-  --build-context oracle-zip=./oracle-assets \
-  -t superset:master-ruten \
-  ../superset
-```
-
-**包含內容**：
-- Oracle Instant Client 19.29（從 build-context `oracle-zip` 注入，zip 不提交進 repo）
-- Playwright Chromium（`playwright install chromium --with-deps`，取代手動管理 Chrome/ChromeDriver）
-- 額外 Python 套件：見 `ruten/requirements.txt`
-
-**升版時需確認**：
-- Oracle zip 路徑（`/opt/oracle/instantclient_19_29`）與 `superset_config_docker.py` 的 `oracledb.init_oracle_client(lib_dir=...)` 一致
-- `lean` stage 繼承的 `PLAYWRIGHT_BROWSERS_PATH` 未被上游改動
-
-### ruten/requirements.txt
-
-`ruten/` 目錄存放 ruten target 專用的 pip 套件清單（DB driver + Playwright）。升版時若上游調整 `lean` 的基礎套件，需確認此清單沒有版本衝突。
 
 ---
 
