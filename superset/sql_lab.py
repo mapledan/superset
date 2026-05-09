@@ -448,7 +448,7 @@ def execute_sql_statements(  # noqa: C901
         ):
             raise SupersetInvalidCVASException()
 
-        parsed_script.statements[-1] = apply_ctas(  # type: ignore
+        parsed_script.statements[-1] = apply_ctas(
             query,
             parsed_script.statements[-1],
         )

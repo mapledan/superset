@@ -24,6 +24,7 @@ from sqlalchemy.dialects import oracle
 from sqlalchemy.dialects.oracle import DATE, NVARCHAR, VARCHAR
 from sqlalchemy.sql import quoted_name
 
+from superset.sql.parse import LimitMethod, SQLStatement
 from tests.unit_tests.db_engine_specs.utils import assert_convert_dttm
 from tests.unit_tests.fixtures.common import dttm  # noqa: F401
 
@@ -128,3 +129,36 @@ def test_denormalize_name(name: str, expected_result: str):
     from superset.db_engine_specs.oracle import OracleEngineSpec as spec  # noqa: N813
 
     assert spec.denormalize_name(oracle.dialect(), name) == expected_result
+
+
+# ---------------------------------------------------------------------------
+# Ruten patch 002: Oracle 11g ROWNUM workaround
+# ---------------------------------------------------------------------------
+
+
+def test_oracle_set_limit_value_uses_rownum() -> None:
+    """Oracle 11g does not support FETCH FIRST N ROWS ONLY; expect ROWNUM wrapper."""
+    stmt = SQLStatement("SELECT id, name FROM employees ORDER BY id", engine="oracle")
+    stmt.set_limit_value(25, method=LimitMethod.FORCE_LIMIT)
+    formatted = stmt.format()
+    assert "ROWNUM" in formatted
+    assert "25" in formatted
+    assert "FETCH" not in formatted.upper()
+
+
+def test_oracle_set_limit_value_wraps_as_subquery() -> None:
+    stmt = SQLStatement("SELECT * FROM orders WHERE status = 'open'", engine="oracle")
+    stmt.set_limit_value(10, method=LimitMethod.FORCE_LIMIT)
+    formatted = stmt.format()
+    # The original query should appear as a subquery
+    assert "orders" in formatted
+    assert "ROWNUM" in formatted
+    assert "10" in formatted
+
+
+def test_oracle_set_limit_value_preserves_select_star() -> None:
+    stmt = SQLStatement("SELECT * FROM products", engine="oracle")
+    stmt.set_limit_value(5, method=LimitMethod.FORCE_LIMIT)
+    formatted = stmt.format()
+    assert "ROWNUM" in formatted
+    assert "5" in formatted

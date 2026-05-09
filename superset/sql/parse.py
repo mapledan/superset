@@ -808,7 +808,9 @@ class SQLStatement(BaseSQLStatement[exp.Expression]):
         """
         Modify the `LIMIT` or `TOP` value of the SQL statement inplace.
         """
-        # Workaround在這：oracle 11g還不能用FETCH FIRST 100 ROWS ONLY，https://github.com/apache/superset/pull/33473
+        # Oracle 11g does not support FETCH FIRST N ROWS ONLY (Oracle 12c+).
+        # Wrap in a ROWNUM subquery instead.
+        # Upstream: https://github.com/apache/superset/pull/33473
         if self.engine == "oracle":
             self._parsed = exp.Select(
                 expressions=[exp.Star()],
@@ -1280,7 +1282,7 @@ class KustoKQLStatement(BaseSQLStatement[str]):
         return predicate
 
 
-def split_elasticsearch_sql(sql: str) -> list[str]:
+def split_elasticsearch_sql(sql: str) -> list[str]:  # noqa: C901
     """
     Split a SQL script into statements for engines that don't use sqlglot.
 
@@ -1397,7 +1399,7 @@ def split_elasticsearch_sql(sql: str) -> list[str]:
     return statements
 
 
-def _iter_elasticsearch_tokens(sql: str) -> Iterator[tuple[str, int, int]]:
+def _iter_elasticsearch_tokens(sql: str) -> Iterator[tuple[str, int, int]]:  # noqa: C901
     """
     Yield (token_type, start, end) for non-comment, non-string tokens.
     """
@@ -1587,22 +1589,22 @@ class ElasticsearchStatement(BaseSQLStatement[str]):
 
         for token_type, start, end in _iter_elasticsearch_tokens(self._parsed):
             token = self._parsed[start:end]
-            if token_type == "symbol":
-                if token == "(":
+            if token_type == "symbol":  # noqa: S105
+                if token == "(":  # noqa: S105
                     depth += 1
-                elif token == ")":
+                elif token == ")":  # noqa: S105
                     depth = max(depth - 1, 0)
                 continue
 
-            if token_type == "word":
-                if depth == 0 and token.lower() == "limit":
+            if token_type == "word":  # noqa: S105
+                if depth == 0 and token.lower() == "limit":  # noqa: S105
                     pending_limit = True
                     continue
 
                 if pending_limit and token.strip():
                     pending_limit = False
 
-            elif token_type == "number":
+            elif token_type == "number":  # noqa: S105
                 if pending_limit and depth == 0:
                     last_limit = (start, end, int(token))
                 pending_limit = False
@@ -1626,14 +1628,12 @@ class ElasticsearchStatement(BaseSQLStatement[str]):
                 message="Elasticsearch SQL only supports the FORCE_LIMIT method.",
             )
 
-        limit_token = self._find_limit_token()
-        if limit_token:
+        if limit_token := self._find_limit_token():
             start, end, _ = limit_token
             self._parsed = f"{self._parsed[:start]}{limit}{self._parsed[end:]}"
             return
 
-        match = re.search(r";\s*$", self._parsed)
-        if match:
+        if match := re.search(r";\s*$", self._parsed):
             prefix = self._parsed[: match.start()].rstrip()
             suffix = self._parsed[match.start() :]
             self._parsed = f"{prefix} LIMIT {limit}{suffix}"
@@ -1730,9 +1730,7 @@ class SQLScript:
         Return optimized script.
         """
         script = copy.deepcopy(self)
-        script.statements = [  # type: ignore
-            statement.optimize() for statement in self.statements
-        ]
+        script.statements = [statement.optimize() for statement in self.statements]
 
         return script
 

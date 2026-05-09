@@ -7,7 +7,8 @@ index 20fe7f2b0c..08f3264b0c 100644
          Modify the `LIMIT` or `TOP` value of the SQL statement inplace.
          """
 -        if method == LimitMethod.FORCE_LIMIT:
-+        # Workaround在這：oracle 11g還不能用FETCH FIRST 100 ROWS ONLY，https://github.com/apache/superset/pull/33473
++        # Oracle 11g does not support FETCH FIRST N ROWS ONLY (introduced in Oracle 12c).
++        # Wrap the query in a ROWNUM subquery instead. Upstream ref: https://github.com/apache/superset/pull/33473
 +        if self.engine == "oracle":
 +            self._parsed = exp.Select(
 +                expressions=[exp.Star()],

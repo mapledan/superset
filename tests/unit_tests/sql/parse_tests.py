@@ -25,7 +25,9 @@ from superset.exceptions import QueryClauseValidationException, SupersetParseErr
 from superset.jinja_context import JinjaTemplateProcessor
 from superset.sql.parse import (
     CTASMethod,
+    ElasticsearchStatement,
     extract_tables_from_statement,
+    get_statement_class,
     JinjaSQLResult,
     KQLTokenType,
     KustoKQLStatement,
@@ -34,6 +36,7 @@ from superset.sql.parse import (
     remove_quotes,
     RLSMethod,
     sanitize_clause,
+    split_elasticsearch_sql,
     split_kql,
     SQLGLOT_DIALECTS,
     SQLScript,
@@ -1540,7 +1543,8 @@ def test_get_kql_limit_value(kql: str, expected: str) -> None:
             "oracle",
             10,
             LimitMethod.FORCE_LIMIT,
-            "SELECT\n  *\nFROM t\nFETCH FIRST 10 ROWS ONLY",
+            # Ruten patch 002: Oracle 11g uses ROWNUM instead of FETCH FIRST N ROWS ONLY
+            "SELECT\n  *\nFROM (\n  SELECT\n    *\n  FROM t\n)\nWHERE\n  ROWNUM <= 10",
         ),
         (
             "SELECT * FROM t",
@@ -3144,3 +3148,120 @@ def test_backtick_invalid_sql_still_fails() -> None:
     sql = "SELECT * FROM `table` WHERE"
     with pytest.raises(SupersetParseError):
         SQLScript(sql, "base")
+
+
+# ---------------------------------------------------------------------------
+# Ruten patch 001: ElasticsearchStatement / split_elasticsearch_sql
+# ---------------------------------------------------------------------------
+
+
+def test_split_elasticsearch_sql_basic() -> None:
+    sql = "SELECT 1; SELECT 2"
+    parts = split_elasticsearch_sql(sql)
+    assert parts == ["SELECT 1", "SELECT 2"]
+
+
+def test_split_elasticsearch_sql_single_no_semicolon() -> None:
+    sql = "SELECT * FROM my_index"
+    assert split_elasticsearch_sql(sql) == ["SELECT * FROM my_index"]
+
+
+def test_split_elasticsearch_sql_ignores_semicolons_in_strings() -> None:
+    sql = "SELECT 'a;b' FROM my_index"
+    assert split_elasticsearch_sql(sql) == ["SELECT 'a;b' FROM my_index"]
+
+
+def test_split_elasticsearch_sql_ignores_semicolons_in_block_comments() -> None:
+    sql = "SELECT /* x;y */ 1 FROM t"
+    assert split_elasticsearch_sql(sql) == ["SELECT /* x;y */ 1 FROM t"]
+
+
+def test_split_elasticsearch_sql_ignores_semicolons_in_line_comments() -> None:
+    sql = "SELECT 1 -- ignore;this\nFROM t"
+    assert split_elasticsearch_sql(sql) == ["SELECT 1 -- ignore;this\nFROM t"]
+
+
+def test_split_elasticsearch_sql_strips_trailing_whitespace() -> None:
+    sql = "  SELECT 1  ;  SELECT 2  "
+    assert split_elasticsearch_sql(sql) == ["SELECT 1", "SELECT 2"]
+
+
+def test_split_elasticsearch_sql_empty_string() -> None:
+    assert split_elasticsearch_sql("") == []
+
+
+def test_elasticsearch_statement_is_select() -> None:
+    stmt = ElasticsearchStatement("SELECT * FROM my_index", engine="elasticsearch")
+    assert stmt.is_select() is True
+
+
+def test_elasticsearch_statement_is_not_mutating() -> None:
+    stmt = ElasticsearchStatement("SELECT 1", engine="elasticsearch")
+    assert stmt.is_mutating() is False
+
+
+def test_elasticsearch_statement_has_no_cte() -> None:
+    stmt = ElasticsearchStatement("SELECT 1", engine="elasticsearch")
+    assert stmt.has_cte() is False
+
+
+def test_elasticsearch_statement_has_no_subquery() -> None:
+    stmt = ElasticsearchStatement("SELECT 1", engine="elasticsearch")
+    assert stmt.has_subquery() is False
+
+
+def test_elasticsearch_statement_get_limit_value_present() -> None:
+    stmt = ElasticsearchStatement(
+        "SELECT * FROM my_index LIMIT 100", engine="elasticsearch"
+    )
+    assert stmt.get_limit_value() == 100
+
+
+def test_elasticsearch_statement_get_limit_value_absent() -> None:
+    stmt = ElasticsearchStatement("SELECT * FROM my_index", engine="elasticsearch")
+    assert stmt.get_limit_value() is None
+
+
+def test_elasticsearch_statement_set_limit_value_appends() -> None:
+    stmt = ElasticsearchStatement("SELECT * FROM my_index", engine="elasticsearch")
+    stmt.set_limit_value(50)
+    assert stmt.get_limit_value() == 50
+    assert "LIMIT 50" in stmt.format()
+
+
+def test_elasticsearch_statement_set_limit_value_replaces() -> None:
+    stmt = ElasticsearchStatement(
+        "SELECT * FROM my_index LIMIT 200", engine="elasticsearch"
+    )
+    stmt.set_limit_value(10)
+    assert stmt.get_limit_value() == 10
+
+
+def test_elasticsearch_statement_format_returns_sql() -> None:
+    sql = "SELECT * FROM my_index LIMIT 5"
+    stmt = ElasticsearchStatement(sql, engine="elasticsearch")
+    assert stmt.format() == sql
+
+
+def test_elasticsearch_statement_invalid_engine_raises() -> None:
+    with pytest.raises(SupersetParseError):
+        ElasticsearchStatement("SELECT 1", engine="mysql")
+
+
+def test_elasticsearch_statement_split_script() -> None:
+    stmts = ElasticsearchStatement.split_script(
+        "SELECT 1; SELECT 2", engine="elasticsearch"
+    )
+    assert len(stmts) == 2
+    assert all(isinstance(s, ElasticsearchStatement) for s in stmts)
+
+
+def test_get_statement_class_returns_elasticsearch() -> None:
+    cls = get_statement_class("elasticsearch")
+    assert cls is ElasticsearchStatement
+
+
+def test_get_statement_class_returns_default_for_unknown_engine() -> None:
+    assert get_statement_class("mysql") is SQLStatement
+    assert get_statement_class("postgresql") is SQLStatement
+    assert get_statement_class("bigquery") is SQLStatement

@@ -61,6 +61,21 @@ test('should render', () => {
   expect(container).toBeInTheDocument();
 });
 
+// Ruten patch 004: regression guard for slice().sort() replacing toSorted()
+test('should render tags in alphabetical order regardless of input order', async () => {
+  const unorderedTags = [
+    { name: 'zebra', id: 3 },
+    { name: 'apple', id: 1 },
+    { name: 'mango', id: 2 },
+  ];
+  render(<TagsList tags={unorderedTags} maxTags={3} />, { useRouter: true });
+  const tagsListItems = await findAllTags();
+  expect(tagsListItems).toHaveLength(3);
+  expect(tagsListItems[0]).toHaveTextContent('apple');
+  expect(tagsListItems[1]).toHaveTextContent('mango');
+  expect(tagsListItems[2]).toHaveTextContent('zebra');
+});
+
 test('should render 5 elements', async () => {
   setup();
   const tagsListItems = await findAllTags();
